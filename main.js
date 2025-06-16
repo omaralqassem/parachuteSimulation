@@ -9,12 +9,15 @@ import TWEEN from '@tweenjs/tween.js';
 let scene, camera, renderer, clock;
 let skydiver, parachute, helicopter;
 let velocity = new THREE.Vector3(0, 0, 0);
-let wind = new THREE.Vector3(2, 0, 0); 
+let wind = new THREE.Vector3(2, 0, 0);
 let parachuteDeployed = false;
 let hud;
 let parachuteType = "circular";
 let skydiverReleased = false;
 let hasLanded = false;
+let parachuteCircular, parachuteLifting;
+const followOffset = new THREE.Vector3(0, 5, -15);
+
 
 function init() {
   ({ scene, camera, renderer, clock } = initWorld());
@@ -23,9 +26,10 @@ function init() {
   setupHUD();
   setupControlsUI();
 
-  loadModels(scene, (loadedSkydiver, loadedParachute, loadedHelicopter) => {
+  loadModels(scene, (loadedSkydiver, loadedParachuteCircular, loadedParachuteLifting, loadedHelicopter) => {
     skydiver = loadedSkydiver;
-    parachute = loadedParachute;
+    parachuteCircular = loadedParachuteCircular;
+    parachuteLifting = loadedParachuteLifting;
     helicopter = loadedHelicopter;
 
     const helicopterHeight = 100;
@@ -45,6 +49,17 @@ function init() {
       const key = e.key.toLowerCase();
 
       if (key === 'p' && !parachuteDeployed && skydiverReleased) {
+        // Select parachute based on type
+        if (parachuteType === 'circular') {
+          parachute = parachuteCircular;
+          parachuteCircular.visible = true;
+          parachuteLifting.visible = false;
+        } else if (parachuteType === 'lifting') {
+          parachute = parachuteLifting;
+          parachuteLifting.visible = true;
+          parachuteCircular.visible = false;
+        }
+
         deployParachute(parachute);
         updateParachuteParams(parachuteType, true);
         parachuteDeployed = true;
@@ -56,16 +71,17 @@ function init() {
       if (key === '2') parachuteType = "lifting";
     });
 
-window.addEventListener('keydown', (e) => {
-  if (e.key.toLowerCase() === 'r' && !skydiverReleased) {
-    scene.add(skydiver);
-    const worldPosition = new THREE.Vector3();
-    helicopter.getWorldPosition(worldPosition);
-    skydiver.position.copy(worldPosition).add(new THREE.Vector3(0, -2, 0));
-    velocity.set(0, 0, 0);
-    skydiverReleased = true;
-  }
-});
+    window.addEventListener('keydown', (e) => {
+      if (e.key.toLowerCase() === 'r' && !skydiverReleased) {
+        scene.add(skydiver);
+        const worldPosition = new THREE.Vector3();
+        helicopter.getWorldPosition(worldPosition);
+        
+        skydiver.position.copy(worldPosition).add(new THREE.Vector3(0, -2, 0));
+        velocity.set(0, 0, 0);
+        skydiverReleased = true;
+      }
+    });
 
     animate();
   });
@@ -83,16 +99,27 @@ function animate() {
       hud.innerHTML += `<br><b>Landing Complete</b>`;
       hasLanded = true;
     }
+
+    // 🧠 CAMERA FOLLOW LOGIC
+    const desiredPosition = skydiver.position.clone().add(
+      followOffset.clone().applyQuaternion(skydiver.quaternion)
+    );
+
+    // Smooth transition
+    camera.position.lerp(desiredPosition, 0.1); // 0.1 = smoothing factor
+
+    // Look at the skydiver
+    camera.lookAt(skydiver.position);
   }
 
-  TWEEN.update();
   renderer.render(scene, camera);
 }
+
 
 function setupHUD() {
   hud = document.createElement('div');
   hud.style.position = 'absolute';
-  hud.style.bottom = '10px';
+  hud.style.top = '10px';
   hud.style.left = '10px';
   hud.style.color = 'white';
   hud.style.backgroundColor = 'rgba(0,0,0,0.6)';
@@ -103,7 +130,7 @@ function setupHUD() {
   hud.style.userSelect = 'none';
   document.body.appendChild(hud);
 }
-
+//details speed,height etc...
 function updateHUD(height, speed) {
   hud.innerHTML = `
     Height: ${height.toFixed(2)} m<br>
@@ -114,7 +141,7 @@ function updateHUD(height, speed) {
 }
 
 function setupControlsUI() {
-const container = document.createElement('div');
+  const container = document.createElement('div');
   container.style.position = 'absolute';
   container.style.top = '10px';
   container.style.right = '10px';
@@ -125,15 +152,15 @@ const container = document.createElement('div');
   container.style.zIndex = '101';
   container.style.maxWidth = '250px';
   container.style.userSelect = 'none';
-  
-const restartBtn = document.createElement('button');
-restartBtn.textContent = 'Restart';
-restartBtn.style.width = '100%';
-restartBtn.style.marginTop = '10px';
-restartBtn.style.padding = '8px';
-restartBtn.style.fontSize = '14px';
-restartBtn.style.cursor = 'pointer';
-restartBtn.onclick = restartSimulation;
+
+  const restartBtn = document.createElement('button');
+  restartBtn.textContent = 'Restart';
+  restartBtn.style.width = '100%';
+  restartBtn.style.marginTop = '10px';
+  restartBtn.style.padding = '8px';
+  restartBtn.style.fontSize = '14px';
+  restartBtn.style.cursor = 'pointer';
+  restartBtn.onclick = restartSimulation;
 
 
   function createInput(labelText, defaultValue, min, max, step, onChange) {
@@ -189,13 +216,13 @@ restartBtn.onclick = restartSimulation;
     wind.x = val;
   }));
 
- document.body.appendChild(container);
- container.appendChild(restartBtn);
+  document.body.appendChild(container);
+  container.appendChild(restartBtn);
 
 
 }
 function restartSimulation() {
-  if (!skydiver || !helicopter || !parachute) return;
+  if (!skydiver || !helicopter || !parachuteCircular || !parachuteLifting) return;
 
   if (scene.children.includes(skydiver)) {
     scene.remove(skydiver);
@@ -206,22 +233,23 @@ function restartSimulation() {
   parachuteDeployed = false;
   hasLanded = false;
 
-  parachute.visible = false;
-  parachute.scale.set(1, 1, 1);
+  parachuteCircular.visible = false;
+  parachuteLifting.visible = false;
+  parachute = null;
 
   if (!helicopter.children.includes(skydiver)) {
     helicopter.add(skydiver);
   }
 
-  const helicopterPos = new THREE.Vector3();
-  helicopter.getWorldPosition(helicopterPos);
-  skydiver.position.copy(new THREE.Vector3(0, 0, 0));
-  helicopter.position.set(0, 100, 0);
+  // Reset helicopter position
+  helicopter.position.set(0, 1000, 0);
+  skydiver.position.set(0, 0, 0);
 
-  camera.position.set(0, 120, 100);
-  camera.lookAt(0, 100, 0);
+  // Reset camera
+  camera.position.set(0, 1020, 100);
+  camera.lookAt(0, 1000, 0);
   if (camera.controls) {
-    camera.controls.target.set(0, 100, 0);
+    camera.controls.target.set(0, 1000, 0);
     camera.controls.update();
   }
 

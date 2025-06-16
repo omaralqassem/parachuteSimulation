@@ -29,8 +29,8 @@ function getDragForce(velocityVector) {
 function getDirectionalDrag(velocityVector) {
   const baseDrag = getDragForce(velocityVector);
 
-  const angleFactorX = Math.cos(THREE.MathUtils.degToRad(alpha));
-  const angleFactorZ = Math.cos(THREE.MathUtils.degToRad(beta));
+const angleFactorX = Math.abs(Math.cos(THREE.MathUtils.degToRad(alpha)));
+const angleFactorZ = Math.abs(Math.cos(THREE.MathUtils.degToRad(beta)));
 
   return new THREE.Vector3(
     baseDrag.x * angleFactorX,
