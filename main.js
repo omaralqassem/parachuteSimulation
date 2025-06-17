@@ -2,7 +2,14 @@ import * as THREE from 'three';
 import { initWorld } from '/WorldManager.js';
 import { loadModels } from '/ModelLoader.js';
 import { setupControls } from '/Controls.js';
-import { updateSkydiverPhysics, updateParachuteParams, getTerminalVelocity, gravity, setParams, getShockForce } from '/physics.js';
+import { 
+  updateSkydiverPhysics, 
+  updateParachuteParams, 
+  getTerminalVelocity, 
+  gravity, 
+  setParams, 
+  getShockForce 
+} from '/physics.js';
 import { deployParachute } from '/Animate.js';
 import TWEEN from '@tweenjs/tween.js';
 
@@ -11,13 +18,14 @@ let skydiver, parachute, helicopter;
 let velocity = new THREE.Vector3(0, 0, 0);
 let wind = new THREE.Vector3(2, 0, 0);
 let parachuteDeployed = false;
-let hud;
 let parachuteType = "circular";
 let skydiverReleased = false;
 let hasLanded = false;
 let parachuteCircular, parachuteLifting;
-const followOffset = new THREE.Vector3(0, 5, -15);
-
+const followOffset = new THREE.Vector3(0, 10, -15);
+let propeller;
+let skydiverClone; 
+let hud;
 
 function init() {
   ({ scene, camera, renderer, clock } = initWorld());
@@ -26,18 +34,18 @@ function init() {
   setupHUD();
   setupControlsUI();
 
-  loadModels(scene, (loadedSkydiver, loadedParachuteCircular, loadedParachuteLifting, loadedHelicopter) => {
-    skydiver = loadedSkydiver;
+  loadModels(scene, (originalSkydiver, loadedSkydiverClone, loadedParachuteCircular, loadedParachuteLifting, loadedHelicopter, loadedPropeller) => {
+    skydiver = originalSkydiver;
+    skydiverClone = loadedSkydiverClone;
     parachuteCircular = loadedParachuteCircular;
     parachuteLifting = loadedParachuteLifting;
     helicopter = loadedHelicopter;
+    propeller = loadedPropeller;
 
-    const helicopterHeight = 100;
+    const helicopterHeight = 1000;
     helicopter.position.set(0, helicopterHeight, 0);
 
-    if (!scene.children.includes(helicopter)) scene.add(helicopter);
-
-    camera.position.set(0, helicopterHeight + 20, 100);
+    camera.position.set(0, helicopterHeight + 15, 50);
     camera.lookAt(0, helicopterHeight, 0);
 
     if (camera.controls) {
@@ -45,76 +53,79 @@ function init() {
       camera.controls.update();
     }
 
-    window.addEventListener('keydown', (e) => {
-      const key = e.key.toLowerCase();
-
-      if (key === 'p' && !parachuteDeployed && skydiverReleased) {
-        // Select parachute based on type
-        if (parachuteType === 'circular') {
-          parachute = parachuteCircular;
-          parachuteCircular.visible = true;
-          parachuteLifting.visible = false;
-        } else if (parachuteType === 'lifting') {
-          parachute = parachuteLifting;
-          parachuteLifting.visible = true;
-          parachuteCircular.visible = false;
-        }
-
-        deployParachute(parachute);
-        updateParachuteParams(parachuteType, true);
-        parachuteDeployed = true;
-
-        const shockForce = getShockForce(30);
-      }
-
-      if (key === '1') parachuteType = "circular";
-      if (key === '2') parachuteType = "lifting";
-    });
-
-    window.addEventListener('keydown', (e) => {
-      if (e.key.toLowerCase() === 'r' && !skydiverReleased) {
-        scene.add(skydiver);
-        const worldPosition = new THREE.Vector3();
-        helicopter.getWorldPosition(worldPosition);
-        
-        skydiver.position.copy(worldPosition).add(new THREE.Vector3(0, -2, 0));
-        velocity.set(0, 0, 0);
-        skydiverReleased = true;
-      }
-    });
+    window.addEventListener('keydown', onKeyDown);
 
     animate();
   });
+}
+
+function onKeyDown(e) {
+  const key = e.key.toLowerCase();
+  console.log('Key pressed:', key);
+
+  if (key === 'p' && !parachuteDeployed && skydiverReleased) {
+    parachute = (parachuteType === 'circular') ? parachuteCircular : parachuteLifting;
+
+    parachuteCircular.visible = (parachuteType === 'circular');
+    parachuteLifting.visible = (parachuteType === 'lifting');
+
+    deployParachute(parachute);
+    updateParachuteParams(parachuteType, true);
+    parachuteDeployed = true;
+    getShockForce(30);
+  }
+
+  if (key === '1') parachuteType = 'circular';
+  if (key === '2') parachuteType = 'lifting';
+
+  if (key === 'r' && !skydiverReleased) {
+    const worldPosition = new THREE.Vector3();
+    helicopter.getWorldPosition(worldPosition);
+
+    if (helicopter.children.includes(skydiverClone)) {
+      helicopter.remove(skydiverClone);
+    }
+
+    if (!scene.children.includes(skydiver)) {
+      scene.add(skydiver);
+    }
+
+    skydiver.position.copy(worldPosition).add(new THREE.Vector3(0, -2, 0));
+    velocity.set(0, 0, 0);
+    skydiverReleased = true;
+
+    console.log('Skydiver released at', skydiver.position);
+  }
 }
 
 function animate() {
   requestAnimationFrame(animate);
   const delta = clock.getDelta();
 
+  if (propeller) {
+    propeller.rotation.z += delta * 10;
+  }
+
   if (skydiverReleased && skydiver) {
     updateSkydiverPhysics(skydiver, velocity, delta, wind);
     updateHUD(skydiver.position.y, velocity.length());
 
-    if (!hasLanded && skydiver.position.y <= -1.5 + 0.01 && velocity.y === 0) {
+    if (!hasLanded && skydiver.position.y <= -1.49 && velocity.y === 0) {
       hud.innerHTML += `<br><b>Landing Complete</b>`;
       hasLanded = true;
     }
 
-    // 🧠 CAMERA FOLLOW LOGIC
+    // Camera follow
     const desiredPosition = skydiver.position.clone().add(
       followOffset.clone().applyQuaternion(skydiver.quaternion)
     );
 
-    // Smooth transition
-    camera.position.lerp(desiredPosition, 0.1); // 0.1 = smoothing factor
-
-    // Look at the skydiver
+    camera.position.lerp(desiredPosition, 0.1);
     camera.lookAt(skydiver.position);
   }
 
   renderer.render(scene, camera);
 }
-
 
 function setupHUD() {
   hud = document.createElement('div');
@@ -130,7 +141,7 @@ function setupHUD() {
   hud.style.userSelect = 'none';
   document.body.appendChild(hud);
 }
-//details speed,height etc...
+
 function updateHUD(height, speed) {
   hud.innerHTML = `
     Height: ${height.toFixed(2)} m<br>
@@ -161,7 +172,6 @@ function setupControlsUI() {
   restartBtn.style.fontSize = '14px';
   restartBtn.style.cursor = 'pointer';
   restartBtn.onclick = restartSimulation;
-
 
   function createInput(labelText, defaultValue, min, max, step, onChange) {
     const wrapper = document.createElement('div');
@@ -216,38 +226,47 @@ function setupControlsUI() {
     wind.x = val;
   }));
 
-  document.body.appendChild(container);
   container.appendChild(restartBtn);
-
-
+  document.body.appendChild(container);
 }
+
 function restartSimulation() {
-  if (!skydiver || !helicopter || !parachuteCircular || !parachuteLifting) return;
+  if (!skydiver || !skydiverClone || !helicopter || !parachuteCircular || !parachuteLifting) return;
 
   if (scene.children.includes(skydiver)) {
     scene.remove(skydiver);
   }
 
+  if (!helicopter.children.includes(skydiverClone)) {
+    helicopter.add(skydiverClone);
+  }
+
   velocity.set(0, 0, 0);
-  skydiverReleased = false;
+  setParams({
+    Cd: 1.0,
+    A: 1.0,
+    mass: 80,
+    ParachuteTension: 1.0,
+    alpha: 0,
+    beta: 0
+  });
+
+  skydiver.position.set(0, 0, 0);
+  skydiver.rotation.set(0, 0, 0);
+  skydiver.quaternion.identity();
+
   parachuteDeployed = false;
+  skydiverReleased = false;
   hasLanded = false;
 
   parachuteCircular.visible = false;
   parachuteLifting.visible = false;
   parachute = null;
 
-  if (!helicopter.children.includes(skydiver)) {
-    helicopter.add(skydiver);
-  }
-
-  // Reset helicopter position
   helicopter.position.set(0, 1000, 0);
-  skydiver.position.set(0, 0, 0);
-
-  // Reset camera
-  camera.position.set(0, 1020, 100);
+  camera.position.set(0, 1015, 50);
   camera.lookAt(0, 1000, 0);
+
   if (camera.controls) {
     camera.controls.target.set(0, 1000, 0);
     camera.controls.update();

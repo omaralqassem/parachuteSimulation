@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
-const gravity = 9.81; 
-const airDensity = 1.225; 
+const gravity = 9.81;
+const airDensity = 1.225;
 
 let Cd = 1.0;
 let A = 1.0;
@@ -25,12 +25,12 @@ function getDragForce(velocityVector) {
   const dragMagnitude = 0.5 * Cd * airDensity * A * speed * speed;
   return direction.multiplyScalar(-dragMagnitude);
 }
-
+// drag force  (air friction )
 function getDirectionalDrag(velocityVector) {
   const baseDrag = getDragForce(velocityVector);
 
-const angleFactorX = Math.abs(Math.cos(THREE.MathUtils.degToRad(alpha)));
-const angleFactorZ = Math.abs(Math.cos(THREE.MathUtils.degToRad(beta)));
+  const angleFactorX = Math.abs(Math.cos(THREE.MathUtils.degToRad(alpha)));
+  const angleFactorZ = Math.abs(Math.cos(THREE.MathUtils.degToRad(beta)));
 
   return new THREE.Vector3(
     baseDrag.x * angleFactorX,
@@ -55,13 +55,14 @@ function updateParachuteParams(parachuteType, isDeployed) {
 }
 
 function updateSkydiverPhysics(skydiver, velocity, deltaTime, windVector = new THREE.Vector3(0, 0, 0)) {
+  //factor vector in negative direction 
   const gravityForce = new THREE.Vector3(0, -getGravityForce(), 0);
   const relativeVelocity = getRelativeVelocity(velocity, windVector);
   const dragForce = getDirectionalDrag(relativeVelocity);
 
   const totalForce = gravityForce.clone().add(dragForce);
   const acceleration = totalForce.divideScalar(mass);
-
+  // new speed dt*a + oldV = newV
   velocity.add(acceleration.multiplyScalar(deltaTime));
 
   const newPosition = skydiver.position.clone().add(velocity.clone().multiplyScalar(deltaTime));
